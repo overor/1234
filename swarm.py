@@ -8,6 +8,7 @@ import asyncio
 from dotenv import load_dotenv
 import logging
 import random
+import requests
 
 load_dotenv()
 
@@ -97,6 +98,35 @@ def run_swarm():
             logger.error(f"💥 Error during swarm execution: {e}\n🔄 Restarting in 3 seconds...")
             time.sleep(3)
 
+# Function to get all tradable symbols
+def get_all_symbols():
+    url = 'https://api.gateio.ws/api/v4/spot/currency_pairs'
+    response = requests.get(url)
+    data = response.json()
+    symbols = []
+    for pair in data:
+        if pair['trade_status'] == 'tradable':
+            symbols.append({
+                'id': pair['id'],
+                'min_amount': float(pair['min_quote_amount']),
+                'precision': pair['amount_precision'],
+            })
+    return symbols
+
+# Function to estimate profit per trade
+def estimate_profit(symbol):
+    url = f'https://api.gateio.ws/api/v4/spot/order_book?currency_pair={symbol}&limit=5'
+    response = requests.get(url)
+    order_book = response.json()
+    
+    highest_bid = float(order_book['bids'][0][0])
+    lowest_ask = float(order_book['asks'][0][0])
+
+    spread = lowest_ask - highest_bid
+    profit_per_trade = spread
+
+    return profit_per_trade
+
 # Main loop to initialize everything
 def hyperloop():
     install_dependencies()
@@ -119,5 +149,21 @@ def hyperloop():
 
         if attempt == 5:
             switch_to_quantized()
+
+    all_symbols = get_all_symbols()
+    print(f"Found {len(all_symbols)} symbols")
+    
+    for symbol_info in all_symbols:
+        symbol = symbol_info['id']
+        min_amount = symbol_info['min_amount']
+        
+        profit = estimate_profit(symbol)
+        if profit > 0.01:  # 1 cent threshold
+            print(f"[🚀] {symbol} meets profit criteria! Estimated profit: ${profit:.5f}/sec")
+            # Here you would start grid trading logic
+        else:
+            print(f"[x] {symbol} skipped. Profit only: ${profit:.5f}/sec")
+        
+        time.sleep(0.2)  # Respect rate limits
 
 hyperloop()
